@@ -1,0 +1,25 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: order-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+      config:
+        server-addr: localhost:8848
+    sentinel:
+      transport:
+        dashboard: localhost:8080
+    rocketmq:
+      name-server: localhost:9876
+      producer:
+        group: order-producer-group
+      consumer:
+        group: order-consumer-group
+seata:
+  enabled: true
+  application-id: order-service
+  tx-service-group: my_tx_group

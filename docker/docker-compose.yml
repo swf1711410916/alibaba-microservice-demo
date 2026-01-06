@@ -1,0 +1,231 @@
+version: '3.8'
+
+# 定义自定义 Docker 网络，所有微服务组件通过此网络互通
+networks:
+  micro-net:
+    driver: bridge  # 使用默认的 bridge 驱动（适用于单机部署）
+services:
+  # ========== MySQL：作为 Nacos 和 Seata 的元数据存储 ==========
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: Root@123!     # root 用户密码（生产环境建议使用 secrets）
+      TZ: Asia/Shanghai                  # 设置时区
+    command: >
+      --default-authentication-plugin=mysql_native_password  
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_connections=1000             
+      --innodb_buffer_pool_size=1G       
+      --bind-address=0.0.0.0
+    volumes:
+      - /root/docker/mysql/data:/var/lib/mysql                # 持久化数据
+      - /root/docker/mysql/conf.d:/etc/mysql/conf.d:ro      # 自定义配置目录（只读）
+      - /root/docker/mysql/init:/docker-entrypoint-initdb.d:ro  # 初始化 SQL 脚本（首次启动执行）
+    ports:
+      - "3306:3306"   # 映射到宿主机，方便外部应用连接（若仅容器内访问可删除）
+    networks:
+      - micro-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pRoot@123!"]
+      interval: 30s    # 每 30 秒检查一次
+      timeout: 10s     # 超时 10 秒
+      retries: 3       # 失败重试 3 次
+
+  # ========== Redis：缓存中间件 ==========
+  redis:
+    image: redis:7.0
+    container_name: redis
+    restart: always
+    command: redis-server /usr/local/etc/redis/redis.conf  # 使用自定义配置文件
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - /root/docker/redis/data:/data                                 # 持久化数据目录
+      - /root/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro  # 挂载配置文件（需提前创建）
+    ports:
+      - "6379:6379"   # 映射到宿主机，方便外部应用连接（若仅容器内访问可删除）
+    networks:
+      - micro-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ========== Nacos 集群（3节点）：服务注册与配置中心 ==========
+  # 注意：Nacos 集群模式要求至少 3 个节点以实现高可用
+  nacos1:
+    image: nacos/nacos-server:v2.4.0
+    container_name: nacos1
+    restart: always
+    environment:
+      MODE: cluster                        # 启用集群模式
+      PREFER_HOST_MODE: hostname           # 使用容器 hostname 作为地址
+      NACOS_AUTH_ENABLE: "true"            # 开启认证（默认用户名/密码：nacos/nacos）
+      NACOS_AUTH_TOKEN: "SecretKey012345678901234567890123456789012345678901234567890123456789"  # Token 加密密钥（必须保持一致）
+      NACOS_AUTH_IDENTITY_KEY: "shiwf"
+      NACOS_AUTH_IDENTITY_VALUE: "123456"
+      SPRING_DATASOURCE_PLATFORM: mysql    # 使用 MySQL 存储配置和服务信息
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: nacos
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: Root@123!
+      NACOS_SERVERS: "nacos1:8848 nacos2:8848 nacos3:8848"  # 集群节点列表（格式：hostname:port）
+    volumes:
+      - /root/docker/nacos/logs:/home/nacos/logs        # 日志持久化
+    ports:
+      - "8848:8848"   # 宿主机端口映射（主节点）
+    depends_on:
+      - mysql         # 依赖 MySQL 启动完成
+    networks:
+      - micro-net
+
+  nacos2:
+    image: nacos/nacos-server:v2.4.0
+    container_name: nacos2
+    restart: always
+    environment:
+      MODE: cluster
+      PREFER_HOST_MODE: hostname
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: "SecretKey012345678901234567890123456789012345678901234567890123456789"
+      NACOS_AUTH_IDENTITY_KEY: "shiwf"
+      NACOS_AUTH_IDENTITY_VALUE: "123456"
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: nacos
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: Root@123!
+      NACOS_SERVERS: "nacos1:8848 nacos2:8848 nacos3:8848"
+    volumes:
+      - /root/docker/nacos/logs:/home/nacos/logs
+    ports:
+      - "8849:8848"   # 映射到宿主机 8849 端口
+    depends_on:
+      - mysql
+    networks:
+      - micro-net
+
+  nacos3:
+    image: nacos/nacos-server:v2.4.0
+    container_name: nacos3
+    restart: always
+    environment:
+      MODE: cluster
+      PREFER_HOST_MODE: hostname
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: "SecretKey012345678901234567890123456789012345678901234567890123456789"
+      NACOS_AUTH_IDENTITY_KEY: "shiwf"
+      NACOS_AUTH_IDENTITY_VALUE: "123456"
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: mysql
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: nacos
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: Root@123!
+      NACOS_SERVERS: "nacos1:8848 nacos2:8848 nacos3:8848"
+    volumes:
+      - /root/docker/nacos/logs:/home/nacos/logs
+    ports:
+      - "8850:8848"   # 映射到宿主机 8850 端口
+    depends_on:
+      - mysql
+    networks:
+      - micro-net
+
+  # ========== Seata：分布式事务协调器 ==========
+  seata:
+    image: seataio/seata-server:2.0.0
+    container_name: seata
+    restart: always
+    environment:
+      SEATA_PORT: 8091                     # Seata 服务端口
+      STORE_MODE: db                       # 事务日志存储模式：db（推荐）或 file
+      SERVER_NODE: 1                       # 服务节点 ID（集群模式下需唯一）
+      # 关键：使用 Seata 2.x 支持的环境变量格式
+      STORE_DB_DATASOURCE: druid
+      STORE_DB_DB_TYPE: mysql
+      STORE_DB_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      STORE_DB_URL: jdbc:mysql://mysql:3306/seata?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+      STORE_DB_USER: root
+      STORE_DB_PASSWORD: Root@123!
+      STORE_DB_MIN_CONN: 5
+      STORE_DB_MAX_CONN: 30
+      SERVICE_VGROUP_MAPPING_your_tx_group: default  # 替换 your_tx_group 为你的事务组名
+      JAVA_OPTS: >
+        -server
+        -Xmx512m
+        -Xms512m
+        -Xss256k
+        -XX:MetaspaceSize=64m
+        -XX:MaxMetaspaceSize=128m
+        -XX:+HeapDumpOnOutOfMemoryError
+        -XX:HeapDumpPath=/root/docker/seata/logs/java_heapdump.hprof
+        -Dlog.home=/root/docker/seata/logs
+        -Dapp.name=seata-server
+    volumes:
+      # === 关键：覆盖所有可能的驱动位置 ===
+      - /root/docker/seata/mysql-connector-j-8.0.33.jar:/seata-server/libs/mysql-connector-java-5.1.42.jar:ro
+      - /root/docker/seata/mysql-connector-j-8.0.33.jar:/seata-server/libs/mysql-connector-java-5.1.49.jar:ro
+      - /root/docker/seata/mysql-connector-j-8.0.33.jar:/seata-server/libs/jdbc/mysql-connector-java-5.1.42.jar:ro
+      - /root/docker/seata/mysql-connector-j-8.0.33.jar:/seata-server/libs/jdbc/mysql-connector-java-8.0.27.jar:ro
+      #日志
+      - /root/docker/seata/logs:/seata/logs
+    ports:
+      - "7091:7091"  # Prometheus 指标端口（可选）
+      - "8091:8091"  # Seata 服务端口
+    depends_on:
+      - mysql        # 依赖 MySQL（用于存储事务日志）
+      - nacos1       # 依赖 Nacos（用于服务注册与发现）
+    networks:
+      - micro-net
+
+  # ========== RocketMQ：消息队列（NameServer + Broker + Console）==========
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.1.0
+    container_name: rocketmq-namesrv
+    restart: always
+    command: sh mqnamesrv          # 启动 NameServer
+    ports:
+      - "9876:9876"                # NameServer 默认端口
+    volumes:
+      - /root/docker/rocketmq/namesrv/logs:/home/rocketmq/logs
+    networks:
+      - micro-net
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.1.0
+    container_name: rocketmq-broker
+    restart: always
+    command: sh mqbroker -n rocketmq-namesrv:9876 -c /etc/rocketmq/broker.conf
+    environment:
+      JAVA_OPT_EXT: "-Duser.home=/opt"
+    ports:
+      - "10909:10909"  # HA 端口（主从复制）
+      - "10911:10911"  # Broker 服务端口
+    volumes:
+      - /root/docker/rocketmq/broker.conf:/etc/rocketmq/broker.conf:ro  # Broker 配置文件（需设置 brokerIP1）
+      - /root/docker/rocketmq/broker/logs:/home/rocketmq/logs
+      - /root/docker/rocketmq/store:/home/rocketmq/store                  # 消息存储目录（必须持久化！）
+    depends_on:
+      - rocketmq-namesrv
+    networks:
+      - micro-net
+
+  rocketmq-console:
+    image: apacherocketmq/rocketmq-console:2.0.0
+    container_name: rocketmq-console
+    restart: always
+    environment:
+      JAVA_OPTS: "-Drocketmq.namesrv.addr=rocketmq-namesrv:9876 -Dcom.rocketmq.sendMessageWithVIPChannel=false"
+    ports:
+      - "8180:8080"   # Web 控制台端口
+    depends_on:
+      - rocketmq-namesrv
+    networks:
+      - micro-net
