@@ -9,6 +9,7 @@
         <module name="order-service" />
         <module name="user-service" />
         <module name="common" />
+        <module name="auth" />
         <module name="gateway-service" />
       </profile>
     </annotationProcessing>

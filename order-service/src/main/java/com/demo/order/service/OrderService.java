@@ -1,8 +1,8 @@
-package com.demo.order;
+package com.demo.order.service;
 
 import com.demo.common.dto.Order;
+import jakarta.annotation.Resource;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import io.seata.spring.annotation.GlobalTransactional;
@@ -10,7 +10,7 @@ import io.seata.spring.annotation.GlobalTransactional;
 @Service
 public class OrderService {
 
-    @Autowired
+    @Resource
     private RocketMQTemplate rocketMQTemplate;
 
     @Transactional
